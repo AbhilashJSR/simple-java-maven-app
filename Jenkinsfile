@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         JAVA_HOME = "/usr/lib/jvm/java-21-openjdk-amd64"
-        PATH = "${JAVA_HOME}/bin:${env.PATH}"
+        PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
         GIT_REPO_URL = 'https://github.com/AbhilashJSR/simple-java-maven-app.git'
         SONAR_URL = 'http://13.232.131.185:30900/'
         SONAR_CRED_ID = 'sonar-token-id'
