@@ -12,9 +12,11 @@ pipeline {
         NEXUS_CRED_ID = 'nexus-creds'
         NEXUS_DOCKER_CRED_ID = 'nexus-docker-creds'
         MAX_BUILDS_TO_KEEP = 5
-        MVN_CMD = '/opt/maven/bin/mvn'
+        
     }
-
+        tools {
+            maven 'maven'
+    }
     stages {
         stage('Checkout') {
             steps {
