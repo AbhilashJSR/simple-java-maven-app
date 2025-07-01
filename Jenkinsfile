@@ -1,24 +1,23 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'JDK21'
-        maven 'maven'  // Ensure this name matches Jenkins Global Tool Configuration
-    }
-
     environment {
         JAVA_HOME = "/usr/lib/jvm/java-21-openjdk-amd64"
-        PATH = "${JAVA_HOME}/bin:$PATH"
+        PATH = "${JAVA_HOME}/bin:/opt/maven/bin:$PATH"
         GIT_REPO_URL = 'https://github.com/AbhilashJSR/simple-java-maven-app.git'
-        SONAR_URL = 'http://13.232.131.185:30900'
+        SONAR_URL = 'http://13.232.131.185:30900/'
         SONAR_CRED_ID = 'sonar-token-id'
-        NEXUS_URL = 'http://13.232.131.185:30801/repository/maven-releases/' // <-- Corrected
-        NEXUS_DOCKER_REPO = '13.232.131.185:30002'
+        NEXUS_URL = 'http://13.232.131.185:30801/#browse/browse:maven-releases'
+        NEXUS_DOCKER_REPO = '13.232.131.185:30002/'
         NEXUS_CRED_ID = 'nexus-creds'
         NEXUS_DOCKER_CRED_ID = 'nexus-docker-creds'
-        MAX_BUILDS_TO_KEEP = '5'
+        MAX_BUILDS_TO_KEEP = 5
+        MVN_CMD = '/opt/maven/bin/mvn'
     }
-
+        tools {
+            jdk 'JDK21'
+            maven 'maven'
+    }
     stages {
         stage('Checkout') {
             steps {
@@ -30,7 +29,7 @@ pipeline {
             steps {
                 script {
                     def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
-                    withCredentials([string(credentialsId: SONAR_CRED_ID, variable: 'SONAR_TOKEN')]) {
+                    withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             curl -s -o /dev/null -w "%{http_code}" -X POST \\
                             -H "Authorization: Bearer ${SONAR_TOKEN}" \\
@@ -45,7 +44,7 @@ pipeline {
             steps {
                 script {
                     def projectName = "${env.JOB_NAME}-${env.BUILD_NUMBER}".replace('/', '-')
-                    withCredentials([string(credentialsId: SONAR_CRED_ID, variable: 'SONAR_TOKEN')]) {
+                    withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                         withSonarQubeEnv('MySonar') {
                             sh """
                                 mvn clean verify sonar:sonar \\
@@ -63,7 +62,7 @@ pipeline {
             steps {
                 script {
                     def artifactName = "my-app-${BUILD_NUMBER}.jar"
-                    sh "mvn clean package"
+                    sh "${MVN_CMD} clean package"
                     sh """
                         mkdir -p tagged-artifacts
                         cp target/*.jar tagged-artifacts/${artifactName}
@@ -82,9 +81,11 @@ pipeline {
                     def finalArtifact = "${artifactId}-${version}.jar"
                     def uploadPath = "${groupPath}/${artifactId}/${version}"
 
-                    sh "mv tagged-artifacts/my-app-${BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}"
+                    sh """
+                        mv tagged-artifacts/my-app-${BUILD_NUMBER}.jar tagged-artifacts/${finalArtifact}
+                    """
 
-                    withCredentials([usernamePassword(credentialsId: NEXUS_CRED_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                    withCredentials([usernamePassword(credentialsId: "${NEXUS_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
                             curl -u $USERNAME:$PASSWORD \\
                             --upload-file tagged-artifacts/${finalArtifact} \\
@@ -97,13 +98,15 @@ pipeline {
 
         stage('Create Dockerfile') {
             steps {
-                writeFile file: 'Dockerfile', text: """
-                    FROM openjdk:21-jdk-slim
-                    WORKDIR /app
-                    COPY tagged-artifacts/my-app-*.jar app.jar
-                    EXPOSE 8080
-                    ENTRYPOINT ["java", "-jar", "app.jar"]
-                """
+                script {
+                    writeFile file: 'Dockerfile', text: """
+                        FROM openjdk:21-jdk-slim
+                        WORKDIR /app
+                        COPY tagged-artifacts/my-app-*.jar app.jar
+                        EXPOSE 8080
+                        ENTRYPOINT ["java", "-jar", "app.jar"]
+                    """
+                }
             }
         }
 
@@ -120,11 +123,11 @@ pipeline {
             steps {
                 script {
                     def imageTag = "${NEXUS_DOCKER_REPO}/my-app:${BUILD_NUMBER}"
-                    withCredentials([usernamePassword(credentialsId: NEXUS_DOCKER_CRED_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                    withCredentials([usernamePassword(credentialsId: "${NEXUS_DOCKER_CRED_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh """
-                            echo $PASSWORD | docker login ${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
+                            echo $PASSWORD | docker login http://${NEXUS_DOCKER_REPO} -u $USERNAME --password-stdin
                             docker push ${imageTag}
-                            docker logout ${NEXUS_DOCKER_REPO}
+                            docker logout http://${NEXUS_DOCKER_REPO}
                         """
                     }
                 }
@@ -134,12 +137,11 @@ pipeline {
         stage('Delete Old Sonar Projects') {
             steps {
                 script {
-                    def currentBuildNum = env.BUILD_NUMBER.toInteger()
-                    def maxKeep = MAX_BUILDS_TO_KEEP.toInteger()
-                    def minBuildToKeep = currentBuildNum - maxKeep
+                    def currentBuild = env.BUILD_NUMBER.toInteger()
+                    def minBuildToKeep = currentBuild - MAX_BUILDS_TO_KEEP.toInteger()
 
                     if (minBuildToKeep > 0) {
-                        withCredentials([string(credentialsId: SONAR_CRED_ID, variable: 'SONAR_TOKEN')]) {
+                        withCredentials([string(credentialsId: "${SONAR_CRED_ID}", variable: 'SONAR_TOKEN')]) {
                             for (int i = 1; i <= minBuildToKeep; i++) {
                                 def oldProject = "${env.JOB_NAME}-${i}".replace('/', '-')
                                 echo "Deleting old Sonar project: ${oldProject}"
