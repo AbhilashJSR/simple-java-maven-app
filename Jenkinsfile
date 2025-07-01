@@ -15,7 +15,7 @@ pipeline {
         MVN_CMD = '/opt/maven/bin/mvn'
     }
         tools {
-             maven 'maven'
+             maven 'Maven 3'
     }
     stages {
         stage('Checkout') {
