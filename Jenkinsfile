@@ -15,7 +15,7 @@ pipeline {
         MVN_CMD = '/opt/maven/bin/mvn'
     }
         tools {
-            jdk 'JDK11'
+            jdk 'JDK21'
             maven 'maven'
     }
     stages {
